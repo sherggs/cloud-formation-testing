@@ -29,6 +29,13 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: eu-west-2
 
+      - name: Install CFN lint
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          source $HOME/.cargo/env
+          uv tool install cfn-lint
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Lint CloudFormation templates
         run: cfn-lint stacks/**/*.yaml
 
