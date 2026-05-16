@@ -1,0 +1,29 @@
+# AWS credentials and config — never commit these
+.aws/
+credentials
+*.pem
+*.key
+
+# CloudFormation packaged templates — generated files not source
+packaged-template.yaml
+packaged.yaml
+
+# SAM build artifacts
+.aws-sam/
+
+# cfn-lint cache
+.cfnlintrc
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/settings.json
+*.swp
+*.swo
+
+# Environment files — may contain secrets
+.env
+.env.*
+!.env.example

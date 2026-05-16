@@ -1,0 +1,61 @@
+name: Deploy CloudFormation Stacks
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "stacks/**"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "stacks/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: Lint CloudFormation templates
+        run: cfn-lint stacks/**/*.yaml
+
+      - name: Create changeset
+        run: |
+          aws cloudformation create-change-set \
+            --stack-name practice-iam \
+            --template-body file://stacks/iam/template.yaml \
+            --change-set-name pr-${{ github.run_number }} \
+            --capabilities CAPABILITY_NAMED_IAM
+
+      - name: Wait for changeset
+        run: |
+          aws cloudformation wait change-set-create-complete \
+            --stack-name practice-iam \
+            --change-set-name pr-${{ github.run_number }}
+
+      - name: Execute changeset
+        run: |
+          aws cloudformation execute-change-set \
+            --stack-name practice-iam \
+            --change-set-name pr-${{ github.run_number }}
+
+      - name: Confirm stack is healthy
+        run: |
+          aws cloudformation wait stack-update-complete \
+            --stack-name practice-iam
+          aws cloudformation describe-stacks \
+            --stack-name practice-iam \
+            --query "Stacks[0].StackStatus"

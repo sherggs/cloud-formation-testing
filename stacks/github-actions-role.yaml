@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "IAM role for GitHub Actions OIDC authentication"
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: "Ade"
+  RepositoryName:
+    Type: String
+    Description: "cloud-formation-testing"
+    Default: "aws-practice"
+Resources:
+  GitHubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: github-actions-deploy-role
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+              StringLike:
+                "token.actions.githubusercontent.com:sub": !Sub "repo:${GitHubOrg}/${RepositoryName}:*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+      Tags:
+        - Key: env
+          Value: practice
+        - Key: purpose
+          Value: github-actions-oidc
+
+Outputs:
+  RoleArn:
+    Description: "Role ARN to add as AWS_ROLE_ARN in GitHub secrets"
+    Value: !GetAtt GitHubActionsRole.Arn

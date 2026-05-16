@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "IAM - practice account security for CI/CD practice"
+Resources:
+  DeploymentRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    Properties:
+      RoleName: practice-deployment-role
+      MaxSessionDuration: 7200
+      Tags:
+        - Key: env
+          Value: practice
+        - Key: owner
+          Value: Ademola
+        - Key: purpose
+          Value: Deployment-testing
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
