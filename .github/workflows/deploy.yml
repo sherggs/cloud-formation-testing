@@ -29,7 +29,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: eu-west-2
 
-      - name: Install CFN lint
+      - name: Install cfn-lint
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           source $HOME/.cargo/env
@@ -39,30 +39,17 @@ jobs:
       - name: Lint CloudFormation templates
         run: cfn-lint stacks/**/*.yaml
 
-      - name: Create changeset
+      - name: Deploy CloudFormation stack
         run: |
-          aws cloudformation create-change-set \
+          aws cloudformation deploy \
+            --template-file stacks/iam/template.yaml \
             --stack-name practice-iam \
-            --template-body file://stacks/iam/template.yaml \
-            --change-set-name pr-${{ github.run_number }} \
-            --capabilities CAPABILITY_NAMED_IAM
-
-      - name: Wait for changeset
-        run: |
-          aws cloudformation wait change-set-create-complete \
-            --stack-name practice-iam \
-            --change-set-name pr-${{ github.run_number }}
-
-      - name: Execute changeset
-        run: |
-          aws cloudformation execute-change-set \
-            --stack-name practice-iam \
-            --change-set-name pr-${{ github.run_number }}
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
 
       - name: Confirm stack is healthy
         run: |
-          aws cloudformation wait stack-update-complete \
-            --stack-name practice-iam
           aws cloudformation describe-stacks \
             --stack-name practice-iam \
-            --query "Stacks[0].StackStatus"
+            --query "Stacks[0].StackStatus" \
+            --output text
