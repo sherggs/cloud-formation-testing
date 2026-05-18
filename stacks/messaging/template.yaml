@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Messaging - SQS, SNS and Kinesis
+
+Resources:
+  PaymentDLQ:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: payment-dlq
+      KmsMasterKeyId: alias/aws/sqs
+      VisibilityTimeout: 270
+      MessageRetentionPeriod: 1209600
+
+  PaymentQueue:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: payment-queue
+      KmsMasterKeyId: alias/aws/sqs
+      VisibilityTimeout: 270
+      ReceiveMessageWaitTimeSeconds: 20
+      MessageRetentionPeriod: 1209600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt PaymentDLQ.Arn
+        maxReceiveCount: 3
+
+  PaymentTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: payment-topic
+      TopicName: payment-topic
+
+  FraudDLQ:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: fraud-dlq
+      KmsMasterKeyId: alias/aws/sqs
+      VisibilityTimeout: 270
+      MessageRetentionPeriod: 1209600
+
+  FraudQueue:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: fraud-queue
+      KmsMasterKeyId: alias/aws/sqs
+      VisibilityTimeout: 270
+      ReceiveMessageWaitTimeSeconds: 20
+      MessageRetentionPeriod: 1209600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt FraudDLQ.Arn
+        maxReceiveCount: 3
+
+  PaymentQueueSubscription:
+    Type: AWS::SNS::Subscription
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TopicArn: !Ref PaymentTopic
+      Protocol: sqs
+      Endpoint: !GetAtt PaymentQueue.Arn
+      RawMessageDelivery: true
+
+  FraudQueueSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref PaymentTopic
+      Protocol: sqs
+      Endpoint: !GetAtt FraudQueue.Arn
+      RawMessageDelivery: true
+
+  PaymentQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref PaymentQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt PaymentQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref PaymentTopic
+
+  FraudQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref FraudQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt FraudQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref PaymentTopic
+
+Outputs:
+  PaymentQueueUrl:
+    Value: !Ref PaymentQueue
+    Export:
+      Name: payment-queue-url
+
+  PaymentDLQUrl:
+    Value: !Ref PaymentDLQ
+    Export:
+      Name: payment-dlq-url

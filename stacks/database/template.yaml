@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Description: Database stack - RDS PostgreSQL
 
 Parameters:
@@ -16,7 +16,7 @@ Parameters:
     Default: mydatabase
   DBEngineVersion:
     Type: String
-    Default: '18.4'
+    Default: "18.4"
   DBMasterUsername:
     Type: String
     Default: masteruser
@@ -37,12 +37,12 @@ Resources:
         - !Select
           - 0
           - !Split
-            - ','
+            - ","
             - !ImportValue networking-PrivateSubnetIds
         - !Select
           - 1
           - !Split
-            - ','
+            - ","
             - !ImportValue networking-PrivateSubnetIds
       Tags:
         - Key: Environment
@@ -72,7 +72,7 @@ Resources:
       Engine: postgres
       EngineVersion: !Ref DBEngineVersion
       MasterUsername: !Ref DBMasterUsername
-      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBSecretName}:SecretString:password}}'
+      MasterUserPassword: !Sub ""
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref DBSecurityGroup
