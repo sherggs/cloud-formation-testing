@@ -72,7 +72,7 @@ Resources:
       Engine: postgres
       EngineVersion: !Ref DBEngineVersion
       MasterUsername: !Ref DBMasterUsername
-      MasterUserPassword: !Sub ""
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DBSecretName}:SecretString:password}}"
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref DBSecurityGroup
