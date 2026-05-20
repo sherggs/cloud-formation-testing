@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Monitoring - DLQs, cloudWatch and trail
+
+Parameters:
+  DBInstanceIdentifier:
+    Type: String
+    Description: "RDS instance identifier from the database stack"
+
+  ECSClusterName:
+    Type: String
+    Description: "This is the name of the ECS cluster"
+
+  ECSServiceName:
+    Type: String
+    Description: "service name for the ecs service "
+
+  DLQName:
+    Type: String
+    Description: "Name of the dead-letter queue to monitor for failed messages"
+
+  ALBFullName:
+    Type: String
+    Description: "Full name of the Application Load Balancer for monitoring target health and request metrics"
+
+  AlertTopicArn:
+    Type: String
+    Description: "SNS topic ARN for publishing CloudWatch alarm notifications"
+
+Resources:
+  DLQDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "dlq-depth-alarm-${DLQName}"
+      AlarmDescription: "Alert when DLQ has messages, indicating failed processing"
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !Ref DLQName
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: notBreaching
+  RDSConnectionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: "rds-connection-alarm"
+      AlarmDescription: "Alert for when the RDS connection is nearing the max"
+      MetricName: DatabaseConnections
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceIdentifier
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: breaching
