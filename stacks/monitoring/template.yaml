@@ -1,0 +1,240 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Monitoring - DLQs, cloudWatch and trail
+
+Parameters:
+  DBInstanceIdentifier:
+    Type: String
+    Default: "none"
+    Description: "RDS instance identifier from the database stack"
+
+  ECSClusterName:
+    Type: String
+    Default: "none"
+    Description: "This is the name of the ECS cluster"
+
+  ECSServiceName:
+    Type: String
+    Default: "none"
+    Description: "service name for the ecs service alarm "
+
+  DLQName:
+    Type: String
+    Default: ""
+    Description: "Name of the dead-letter queue to monitor for failed messages"
+
+  ALBFullName:
+    Type: String
+    Default: ""
+    Description: "Full name of the Application Load Balancer for monitoring target health and request metrics"
+
+  AlertTopicArn:
+    Type: String
+    Description: "SNS topic ARN for publishing CloudWatch alarm notifications"
+
+Conditions:
+  HasDLQName: !Not [!Equals [!Ref DLQName, ""]]
+  HasALBFullName: !Not [!Equals [!Ref ALBFullName, ""]]
+  HasDBInstanceIdentifier: !Not [!Equals [!Ref DBInstanceIdentifier, "none"]]
+  HasECSService: !Not [!Equals [!Ref ECSServiceName, "none"]]
+
+Resources:
+  DLQDepthAlarm:
+    Condition: HasDLQName
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "dlq-depth-alarm-${DLQName}"
+      AlarmDescription: "Alert when DLQ has messages, indicating failed processing"
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !Ref DLQName
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: notBreaching
+
+  RDSConnectionAlarm:
+    Condition: HasDBInstanceIdentifier
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "rds-connection-alarm-${DBInstanceIdentifier}"
+      AlarmDescription: "Alert for when the RDS connection is nearing the max"
+      MetricName: DatabaseConnections
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceIdentifier
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: breaching
+
+  ECSTaskRunningCount:
+    Condition: HasECSService
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "ecs-${ECSServiceName}"
+      AlarmDescription: "Alert when ECS running tasks fall below the expected service count"
+      MetricName: RunningTaskCount
+      Namespace: AWS/ECS
+      Threshold: 2
+      ComparisonOperator: LessThanThreshold
+      Period: 60
+      EvaluationPeriods: 1
+      Statistic: Average
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ECSClusterName
+        - Name: ServiceName
+          Value: !Ref ECSServiceName
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: breaching
+
+  ALB5XXErrorRateAlarm:
+    Condition: HasALBFullName
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "alb-5xx-error-rate-alarm-${ALBFullName}"
+      AlarmDescription: "Alert when the ALB target 5XX error count exceeds threshold"
+      MetricName: HTTPCode_Target_5XX_Count
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref ALBFullName
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: breaching
+
+  ALBP99LatencyAlarm:
+    Condition: HasALBFullName
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "alb-p99-latency-alarm-${ALBFullName}"
+      AlarmDescription: "Alert when ALB target p99 response time exceeds 2 seconds"
+      MetricName: TargetResponseTime
+      Namespace: AWS/ApplicationELB
+      ExtendedStatistic: p99
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 2
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref ALBFullName
+      AlarmActions:
+        - !Ref AlertTopicArn
+      TreatMissingData: breaching
+
+  PaymentAPILogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: /ecs/payment-api
+      RetentionInDays: 90
+
+  PaymentErrorMetrics:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ $.level = "ERROR" }'
+      LogGroupName: !Ref PaymentAPILogGroup
+      MetricTransformations:
+        - MetricName: PaymentErrors
+          MetricNamespace: PaymentAPI
+          MetricValue: "1"
+          DefaultValue: 0
+
+  #Alarm for the custom metric
+  PaymentErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: payment-error-count
+      AlarmDescription: "Alert for when the payment exceeds 5 in 5 minutes"
+      MetricName: PaymentErrors
+      Namespace: PaymentAPI
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "cloudtrail-${AWS::AccountId}-${AWS::Region}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  CloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudTrailBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt CloudTrailBucket.Arn
+          - Sid: AWSCloudTrailWrite
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "${CloudTrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*"
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+  #cloudtrail
+  CloudTrailTrail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: CloudTrailBucketPolicy
+    Properties:
+      TrailName: organization-trail
+      S3BucketName: !Ref CloudTrailBucket
+      IsLogging: true
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      EventSelectors:
+        - ReadWriteType: All
+          IncludeManagementEvents: true
